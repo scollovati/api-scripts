@@ -166,7 +166,10 @@ def fetch_entries_for_interval(start_ts, end_ts):
     pager.pageIndex = 1
 
     filter = KalturaMediaEntryFilter()
-    # filter.mediaTypeEqual = KalturaMediaType(KalturaMediaType.VIDEO) # commented for allowing also other media types
+    # uncomment if one mediaType is needed
+    # filter.mediaTypeEqual = KalturaMediaType(KalturaMediaType.VIDEO)
+    # uncomment if multiple mediaTypes are needed
+    filter.mediaTypeIn = ','.join(str([KalturaMediaType.AUDIO, KalturaMediaType.VIDEO]))
     if OWNER_ID:
         filter.userIdEqual = OWNER_ID
     if CATEGORY_ID:
@@ -175,6 +178,7 @@ def fetch_entries_for_interval(start_ts, end_ts):
         filter.tagsLike = TAG
     filter.createdAtGreaterThanOrEqual = int(start_ts.timestamp())
     filter.createdAtLessThanOrEqual = int(end_ts.timestamp())
+    filter.orderBy = "+createdAt"
 
     all_entries = []
 
@@ -274,13 +278,23 @@ def fetch_entries_for_interval(start_ts, end_ts):
                     "categories": entry.categories.replace(",", ";"),
                     "tags": entry.tags.replace(",", ";"),
                     "owner_id": entry.userId,
-                    "original_filename": original_filename,
-                    "flavor_count": str(flavor_count),
-                    "flavor_size_sum": str(
-                        round(flavor_size_sum / 1024, 2)
-                    ),  # MegaBytes (Kaltura returns KBytes)
+                    "co_viewers": entry.entitledUsersView,
+                    "co_publishers": entry.entitledUsersPublish,
+                    "co_editors": entry.entitledUsersEdit,
+                    "flavor_count": str(flavor_count)
                 }
             )
+
+            if FLAVOR_SIZE:
+                all_entries.append(
+                    {
+                        "flavor_size_sum": str(round(flavor_size_sum / 1024, 2))  # MegaBytes (Kaltura returns KBytes)
+                    }
+                )
+                if FLAVOR_SOURCE_NAME:
+                    all_entries.append({
+                        "original_filename": original_filename
+                    })
 
             # calculate outputs of the method
             entry_count += 1
@@ -329,12 +343,18 @@ for interval_start, interval_end in get_interval_ranges(
         {
             "range": label,
             "entry_count": count,
-            "total_duration_minutes": round(duration / 60, 2),
-            "flavor_size_sum": round(
-                flavor_size_sum / 1024, 2
-            ),  # MegaBytes (Kaltura returns KBytes)
+            "total_duration_minutes": round(duration / 60, 2)
         }
     )
+
+
+    if FLAVOR_SIZE:
+        summary.append(
+            {
+                "flavor_size_sum": str(round(flavor_size_sum / 1024, 2))  # MegaBytes (Kaltura returns KBytes)
+            }
+        )
+
     detailed_entries.extend(entries)
 
 
@@ -353,9 +373,6 @@ total_hours = total_minutes / 60
 total_days = total_hours / 24
 total_months = total_days / 30.4375  # Avg. Gregorian month
 total_years = total_days / 365.25  # Accounting for leap years
-total_flavor_size_sum = (
-    sum(row["flavor_size_sum"] for row in summary) / 1024
-)  # GigaBytes since row["flavor_size_sum"] is expressed in MegaBytes
 
 print("\nTotals")
 print("-" * 35)
@@ -365,7 +382,12 @@ print(f"{'Duration (hours):':<20}{total_hours:>15,.2f}")
 print(f"{'Duration (days):':<20}{total_days:>15,.2f}")
 print(f"{'Duration (months):':<20}{total_months:>15,.2f}")
 print(f"{'Duration (years):':<20}{total_years:>15,.2f}")
-print(f"{'Flavor Size (GB):':<20}{total_flavor_size_sum:>15,.2f}")
+
+if FLAVOR_SIZE:
+    total_flavor_size_sum = (
+            sum(row["flavor_size_sum"] for row in summary) / 1024
+    )  # GigaBytes since row["flavor_size_sum"] is expressed in MegaBytes
+    print(f"{'Flavor Size (GB):':<20}{total_flavor_size_sum:>15,.2f}")
 
 
 # ==== CSV Export ====
@@ -395,12 +417,7 @@ if EXPORT_CSV:
     with open(summary_filename, "w", newline="") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=[
-                "range",
-                "entry_count",
-                "total_duration_minutes",
-                "flavor_size_sum",
-            ],
+            fieldnames=summary[0].keys()
         )
         writer.writeheader()
         writer.writerows(summary)
@@ -408,23 +425,7 @@ if EXPORT_CSV:
     with open(details_filename, "w", newline="") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=[
-                "entryId",
-                "name",
-                "duration_sec",
-                "duration",
-                "media_type",
-                "created_at",
-                "updated_at",
-                "lastplayed_at",
-                "plays",
-                "categories",
-                "tags",
-                "owner_id",
-                "original_filename",
-                "flavor_count",
-                "flavor_size_sum",
-            ],
+            fieldnames=detailed_entries[0].keys()
         )
 
         writer.writeheader()
