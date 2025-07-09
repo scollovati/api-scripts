@@ -111,6 +111,7 @@ if confirm.strip().upper() == "DELETE":
             continue  # Skip entries already marked as not found
 
         try:
+            # change to client.baseEntry.recycle(eid) if you have the recycle bin active and you want to use it
             client.baseEntry.delete(eid)
             print(f"[DELETED] Entry {eid}")
             row["status"] = "DELETED"
